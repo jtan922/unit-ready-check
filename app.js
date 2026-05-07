@@ -135,7 +135,10 @@ function blankInspection() {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     meta: { ...DEFAULT_META, inspectionDate: todayIso(), inspectorDate: todayIso() },
-    checks: {}
+    checks: {},
+    acceptedAt: "",
+    acceptedHash: "",
+    modifiedAfterAcceptedAt: ""
   };
 }
 
@@ -182,7 +185,10 @@ function normalizeInspections(inspections) {
         unitAddress: inspection.meta?.unitAddress || "",
         propertyManager: inspection.meta?.propertyManager || inspection.meta?.manager || ""
       },
-      checks: inspection.checks || migrateChecks(inspection.items || {})
+      checks: inspection.checks || migrateChecks(inspection.items || {}),
+      acceptedAt: inspection.acceptedAt || "",
+      acceptedHash: inspection.acceptedHash || "",
+      modifiedAfterAcceptedAt: inspection.modifiedAfterAcceptedAt || ""
     };
   }
   return normalized;
@@ -291,6 +297,7 @@ function applyInspection() {
     field.checked = Boolean(inspection.checks[field.dataset.check]);
   });
   renderUnitList();
+  updateAcceptButton();
 }
 
 function readInspection() {
@@ -307,6 +314,7 @@ function readInspection() {
     inspection.checks[field.dataset.check] = field.checked;
   });
   inspection.updatedAt = new Date().toISOString();
+  updateAcceptanceTracking(inspection);
 }
 
 function saveCurrent(options = {}) {
@@ -418,6 +426,88 @@ function mergeInspections(incoming) {
   if (!app.inspections[app.activeId]) app.activeId = Object.keys(app.inspections)[0] || "";
 }
 
+function allChecksComplete(inspection) {
+  return expectedCheckIds().every((id) => Boolean(inspection.checks?.[id]));
+}
+
+function propertyManagerSigned(inspection) {
+  const meta = inspection.meta || {};
+  return Boolean((meta.propertyManager || "").trim() && meta.propertyManagerDate);
+}
+
+function readyForAcceptance(inspection) {
+  return allChecksComplete(inspection) && propertyManagerSigned(inspection);
+}
+
+function acceptancePayload(inspection) {
+  return {
+    meta: inspection.meta || {},
+    checks: inspection.checks || {}
+  };
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableStringify(value[key])}`
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function simpleHash(value) {
+  const text = stableStringify(value);
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
+  }
+  return String(hash >>> 0);
+}
+
+function acceptanceHash(inspection) {
+  return simpleHash(acceptancePayload(inspection));
+}
+
+function updateAcceptanceTracking(inspection) {
+  const currentHash = acceptanceHash(inspection);
+  if (!readyForAcceptance(inspection)) {
+    if (inspection.acceptedHash && inspection.acceptedHash !== currentHash && !inspection.modifiedAfterAcceptedAt) {
+      inspection.modifiedAfterAcceptedAt = new Date().toISOString();
+    }
+    return;
+  }
+  if (!inspection.acceptedAt || !inspection.acceptedHash) {
+    inspection.acceptedAt = new Date().toISOString();
+    inspection.acceptedHash = currentHash;
+    inspection.modifiedAfterAcceptedAt = "";
+    return;
+  }
+  if (inspection.acceptedHash !== currentHash && !inspection.modifiedAfterAcceptedAt) {
+    inspection.modifiedAfterAcceptedAt = new Date().toISOString();
+  }
+  if (inspection.acceptedHash === currentHash) inspection.modifiedAfterAcceptedAt = "";
+}
+
+function forceAcceptCurrent() {
+  readInspection();
+  const inspection = currentInspection();
+  if (!readyForAcceptance(inspection)) {
+    showToast("Complete all items and property manager signature/date first.");
+    updateAcceptButton();
+    return;
+  }
+  inspection.acceptedAt = new Date().toISOString();
+  inspection.acceptedHash = acceptanceHash(inspection);
+  inspection.modifiedAfterAcceptedAt = "";
+  inspection.updatedAt = new Date().toISOString();
+  persist();
+  renderUnitList();
+  updateAcceptButton();
+  pushToCloud({ notify: false, skipMerge: true });
+  showToast("Unit accepted");
+}
+
 function mergeDeleted(incomingDeleted) {
   for (const [id, deletedAt] of Object.entries(incomingDeleted)) {
     if (!app.deleted[id] || new Date(deletedAt) > new Date(app.deleted[id])) {
@@ -465,19 +555,66 @@ function renderUnitList() {
 
   $("#unitTotal").textContent = String(Object.keys(app.inspections).length);
   $("#unitList").innerHTML = units.map((inspection) => {
-    const checked = Object.values(inspection.checks || {}).filter(Boolean).length;
+    const checked = checkedCount(inspection);
     const total = totalChecks();
+    const complete = checked === total;
+    const signed = propertyManagerSigned(inspection);
+    const modified = Boolean(inspection.modifiedAfterAcceptedAt);
+    const accepted = complete && signed && !modified;
+    const statusClass = modified ? "modified" : accepted ? "accepted" : complete ? "complete" : "open";
+    const statusText = modified ? "Edited after sign-off" : accepted ? "Accepted" : complete ? "Complete, needs PM sign-off" : "In progress";
+    const statusIcon = modified ? "!" : accepted ? "✓" : complete ? "•" : "";
     return `
       <button class="unit-card ${inspection.id === app.activeId ? "active" : ""}" type="button" data-unit-id="${inspection.id}">
-        <strong>${escapeHtml(inspection.meta.unitAddress || "Untitled Unit")}</strong>
+        <strong>
+          <span>${escapeHtml(inspection.meta.unitAddress || "Untitled Unit")}</span>
+          <mark class="unit-status ${statusClass}">${statusIcon} ${statusText}</mark>
+        </strong>
         <span>${checked}/${total} checked</span>
-        <small>${inspection.updatedAt ? new Date(inspection.updatedAt).toLocaleDateString() : ""}</small>
+        <small>${unitTimingText(inspection)}</small>
       </button>
     `;
   }).join("") || `<p class="empty-note">No saved units match that search.</p>`;
+  updateAcceptButton();
+}
+
+function unitTimingText(inspection) {
+  if (inspection.modifiedAfterAcceptedAt) {
+    return `Edited ${new Date(inspection.modifiedAfterAcceptedAt).toLocaleDateString()}`;
+  }
+  if (inspection.acceptedAt && readyForAcceptance(inspection)) {
+    return `Accepted ${new Date(inspection.acceptedAt).toLocaleDateString()}`;
+  }
+  return inspection.updatedAt ? `Updated ${new Date(inspection.updatedAt).toLocaleDateString()}` : "";
+}
+
+function updateAcceptButton() {
+  const button = $("#acceptUnitBtn");
+  if (!button) return;
+  const inspection = currentInspection();
+  const ready = readyForAcceptance(inspection);
+  button.disabled = !ready;
+  button.textContent = inspection?.modifiedAfterAcceptedAt ? "Re-accept Current Unit" : "Accept Current Unit";
 }
 
 function totalChecks() {
+  return expectedCheckIds().length;
+}
+
+function expectedCheckIds() {
+  return SECTIONS.flatMap((section) => {
+    if (section.type === "matrix") {
+      return section.items.flatMap((item) => section.columns.map((column) => checkId(section.title, item, column)));
+    }
+    return section.items.map((item) => checkId(section.title, item));
+  });
+}
+
+function checkedCount(inspection) {
+  return expectedCheckIds().filter((id) => Boolean(inspection.checks?.[id])).length;
+}
+
+function legacyTotalChecks() {
   return SECTIONS.reduce((sum, section) => {
     if (section.type === "matrix") return sum + (section.items.length * section.columns.length);
     return sum + section.items.length;
@@ -583,6 +720,7 @@ function bindEvents() {
     saveCurrent();
     window.print();
   });
+  $("#acceptUnitBtn").addEventListener("click", forceAcceptCurrent);
   $("#deleteUnitBtn").addEventListener("click", deleteCurrentInspection);
   $("#importBtn").addEventListener("click", () => $("#importFile").click());
   $("#importFile").addEventListener("change", (event) => {
