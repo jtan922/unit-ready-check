@@ -111,7 +111,8 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 let app = {
   activeId: "",
-  inspections: {}
+  inspections: {},
+  deleted: {}
 };
 
 let toastTimer = null;
@@ -145,6 +146,7 @@ function loadApp() {
       const parsed = JSON.parse(raw);
       app.activeId = parsed.activeId || "";
       app.inspections = normalizeInspections(parsed.inspections || {});
+      app.deleted = normalizeDeleted(parsed.deleted || {});
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -157,6 +159,14 @@ function loadApp() {
   }
   if (!app.inspections[app.activeId]) app.activeId = Object.keys(app.inspections)[0];
   persist();
+}
+
+function normalizeDeleted(deleted) {
+  const normalized = {};
+  for (const [id, deletedAt] of Object.entries(deleted || {})) {
+    if (typeof deletedAt === "string" && deletedAt) normalized[id] = deletedAt;
+  }
+  return normalized;
 }
 
 function normalizeInspections(inspections) {
@@ -336,7 +346,9 @@ async function syncFromCloud(options = {}) {
     const remote = await response.json();
     cloudAvailable = true;
     const remoteInspections = normalizeInspections(remote.inspections || {});
+    const remoteDeleted = normalizeDeleted(remote.deleted || {});
     const localWasBlank = isOnlyBlankLocalInspection();
+    mergeDeleted(remoteDeleted);
     mergeInspections(remoteInspections);
     if (localWasBlank && Object.keys(remoteInspections).length) {
       const firstRemoteId = Object.keys(remoteInspections)[0];
@@ -345,7 +357,7 @@ async function syncFromCloud(options = {}) {
     persist();
     applyInspection();
 
-    const localHasNewerData = hasLocalNewerThan(remoteInspections);
+    const localHasNewerData = hasLocalNewerThan(remoteInspections) || hasLocalDeletedNewerThan(remoteDeleted);
     if (localHasNewerData) await pushToCloud({ notify: false, skipMerge: true });
 
     setCloudStatus("saved", "ok");
@@ -371,13 +383,14 @@ async function pushToCloud(options = {}) {
       const response = await fetch(API_PATH, { cache: "no-store" });
       if (response.ok) {
         const remote = await response.json();
+        mergeDeleted(normalizeDeleted(remote.deleted || {}));
         mergeInspections(normalizeInspections(remote.inspections || {}));
       }
     }
     const response = await fetch(API_PATH, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inspections: app.inspections })
+      body: JSON.stringify({ inspections: app.inspections, deleted: app.deleted })
     });
     if (!response.ok) throw new Error(`Cloud write failed: ${response.status}`);
     cloudAvailable = true;
@@ -396,6 +409,7 @@ async function pushToCloud(options = {}) {
 
 function mergeInspections(incoming) {
   for (const [id, inspection] of Object.entries(incoming)) {
+    if (isDeletedNewerThanInspection(id, inspection)) continue;
     const local = app.inspections[id];
     if (!local || new Date(inspection.updatedAt || 0) > new Date(local.updatedAt || 0)) {
       app.inspections[id] = inspection;
@@ -404,11 +418,34 @@ function mergeInspections(incoming) {
   if (!app.inspections[app.activeId]) app.activeId = Object.keys(app.inspections)[0] || "";
 }
 
+function mergeDeleted(incomingDeleted) {
+  for (const [id, deletedAt] of Object.entries(incomingDeleted)) {
+    if (!app.deleted[id] || new Date(deletedAt) > new Date(app.deleted[id])) {
+      app.deleted[id] = deletedAt;
+    }
+    const inspection = app.inspections[id];
+    if (inspection && isDeletedNewerThanInspection(id, inspection)) delete app.inspections[id];
+  }
+  if (!app.inspections[app.activeId]) app.activeId = Object.keys(app.inspections)[0] || "";
+}
+
+function isDeletedNewerThanInspection(id, inspection) {
+  const deletedAt = app.deleted[id];
+  if (!deletedAt) return false;
+  return new Date(deletedAt) >= new Date(inspection.updatedAt || inspection.createdAt || 0);
+}
+
 function hasLocalNewerThan(remoteInspections) {
   return Object.entries(app.inspections).some(([id, inspection]) => {
     const remote = remoteInspections[id];
     return !remote || new Date(inspection.updatedAt || 0) > new Date(remote.updatedAt || 0);
   });
+}
+
+function hasLocalDeletedNewerThan(remoteDeleted) {
+  return Object.entries(app.deleted || {}).some(([id, deletedAt]) =>
+    !remoteDeleted[id] || new Date(deletedAt) > new Date(remoteDeleted[id])
+  );
 }
 
 function isOnlyBlankLocalInspection() {
@@ -469,7 +506,9 @@ function switchInspection(id) {
 function deleteCurrentInspection() {
   const label = currentInspection().meta.unitAddress || "this unit";
   if (!confirm(`Delete ${label}?`)) return;
-  delete app.inspections[app.activeId];
+  const deletedId = app.activeId;
+  app.deleted[deletedId] = new Date().toISOString();
+  delete app.inspections[deletedId];
   if (!Object.keys(app.inspections).length) {
     const inspection = blankInspection();
     app.inspections[inspection.id] = inspection;
@@ -477,7 +516,7 @@ function deleteCurrentInspection() {
   app.activeId = Object.keys(app.inspections)[0];
   persist();
   applyInspection();
-  queueCloudSave();
+  pushToCloud({ notify: false, skipMerge: true });
   showToast("Unit deleted");
 }
 
@@ -503,6 +542,7 @@ function importAll(file) {
       const incoming = JSON.parse(reader.result);
       if (!incoming.inspections) throw new Error("Missing inspections");
       app.inspections = normalizeInspections(incoming.inspections);
+      app.deleted = normalizeDeleted(incoming.deleted || {});
       app.activeId = incoming.activeId || Object.keys(app.inspections)[0];
       persist();
       applyInspection();

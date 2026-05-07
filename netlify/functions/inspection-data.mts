@@ -3,6 +3,7 @@ import { getStore } from "@netlify/blobs";
 
 type StoredInspectionState = {
   inspections: Record<string, unknown>;
+  deleted?: Record<string, string>;
   updatedAt: string;
 };
 
@@ -23,7 +24,7 @@ export default async (req: Request, _context: Context) => {
 
   if (req.method === "GET") {
     const saved = await dataStore.get(key, { type: "json" }) as StoredInspectionState | null;
-    return json(saved || { inspections: {}, updatedAt: null });
+    return json(saved || { inspections: {}, deleted: {}, updatedAt: null });
   }
 
   if (req.method === "POST") {
@@ -34,6 +35,7 @@ export default async (req: Request, _context: Context) => {
 
     const saved: StoredInspectionState = {
       inspections: body.inspections,
+      deleted: body.deleted && typeof body.deleted === "object" ? body.deleted as Record<string, string> : {},
       updatedAt: new Date().toISOString(),
     };
 
