@@ -25,6 +25,7 @@ body {
 }
 
 button,
+a.button-link,
 input,
 textarea {
   font: inherit;
@@ -101,8 +102,23 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+button:hover,
+a.button-link:hover {
   border-color: var(--control);
+}
+
+a.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid #c7c7c7;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 12px;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .danger {
@@ -180,6 +196,71 @@ button:hover {
   border: 1px solid #d2d2d2;
   background: var(--sheet);
   box-shadow: 0 16px 36px rgba(20, 20, 20, 0.12);
+}
+
+.reference-shell {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.requirements-page {
+  column-count: 2;
+  column-gap: 28px;
+  padding: 0.45in;
+  border: 1px solid #d2d2d2;
+  background: #fff;
+  box-shadow: 0 16px 36px rgba(20, 20, 20, 0.12);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.requirements-title {
+  column-span: all;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.requirements-title h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.12;
+}
+
+.requirements-title p {
+  margin: 4px 0;
+  font-weight: 700;
+}
+
+.requirements-title small {
+  display: block;
+  color: var(--muted);
+}
+
+.requirements-intro {
+  column-span: all;
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #d8d8d8;
+}
+
+.requirements-page section {
+  break-inside: avoid;
+  margin: 0 0 14px;
+}
+
+.requirements-page h3 {
+  margin: 0 0 5px;
+  font-size: 0.96rem;
+}
+
+.requirements-page ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.requirements-page li {
+  margin-bottom: 3px;
 }
 
 .sheet-header {
@@ -445,6 +526,11 @@ input[type="radio"] {
     justify-content: start;
   }
 
+  .requirements-page {
+    column-count: 1;
+    padding: 18px 14px;
+  }
+
   .pdf-section table {
     font-size: 0.74rem;
   }
@@ -477,6 +563,27 @@ input[type="radio"] {
     padding: 0;
     border: 0;
     box-shadow: none;
+  }
+
+  .reference-shell {
+    display: block;
+    width: auto;
+    margin: 0;
+    padding: 0;
+  }
+
+  .requirements-page {
+    column-count: 2;
+    column-gap: 22px;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    font-size: 0.72rem;
+    line-height: 1.22;
+  }
+
+  .requirements-page section {
+    margin-bottom: 8px;
   }
 
   .paper-sheet input,
