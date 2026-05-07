@@ -1,0 +1,13 @@
+{
+  "name": "unit-ready-check",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^9.1.0",
+    "@netlify/functions": "^3.1.10"
+  },
+  "devDependencies": {
+    "netlify-cli": "^21.0.0",
+    "typescript": "^5.8.3"
+  }
+}

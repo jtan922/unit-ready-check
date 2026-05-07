@@ -1,5 +1,6 @@
 const STORAGE_KEY = "preshowOccupancyInspections.v2";
 const OLD_STORAGE_KEY = "preshowMoveInInspections.v1";
+const API_PATH = "/api/inspection-data";
 
 const SECTIONS = [
   {
@@ -114,6 +115,9 @@ let app = {
 };
 
 let toastTimer = null;
+let cloudSaveTimer = null;
+let cloudAvailable = false;
+let cloudBusy = false;
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -190,6 +194,13 @@ function persist() {
     showToast("Storage is full. Backup saved sheets, then delete old units.");
     return false;
   }
+}
+
+function setCloudStatus(message, level = "") {
+  const node = $("#cloudStatus");
+  if (!node) return;
+  node.textContent = `Cloud: ${message}`;
+  node.dataset.level = level;
 }
 
 function currentInspection() {
@@ -293,6 +304,120 @@ function saveCurrent(options = {}) {
   const saved = persist();
   renderUnitList();
   if (saved && options.notify) showToast("Saved");
+  queueCloudSave();
+}
+
+async function initCloud() {
+  if (location.protocol === "file:") {
+    setCloudStatus("local only", "warn");
+    return;
+  }
+  await syncFromCloud({ notify: false });
+  setInterval(() => syncFromCloud({ notify: false, quiet: true }), 30000);
+}
+
+function queueCloudSave() {
+  if (!cloudAvailable || cloudBusy) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => pushToCloud({ notify: false }), 800);
+}
+
+async function syncFromCloud(options = {}) {
+  if (location.protocol === "file:") {
+    setCloudStatus("local only", "warn");
+    return false;
+  }
+
+  cloudBusy = true;
+  setCloudStatus("syncing");
+  try {
+    const response = await fetch(API_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Cloud read failed: ${response.status}`);
+    const remote = await response.json();
+    cloudAvailable = true;
+    const remoteInspections = normalizeInspections(remote.inspections || {});
+    const localWasBlank = isOnlyBlankLocalInspection();
+    mergeInspections(remoteInspections);
+    if (localWasBlank && Object.keys(remoteInspections).length) {
+      const firstRemoteId = Object.keys(remoteInspections)[0];
+      app.activeId = firstRemoteId;
+    }
+    persist();
+    applyInspection();
+
+    const localHasNewerData = hasLocalNewerThan(remoteInspections);
+    if (localHasNewerData) await pushToCloud({ notify: false, skipMerge: true });
+
+    setCloudStatus("saved", "ok");
+    if (options.notify) showToast("Synced");
+    return true;
+  } catch {
+    cloudAvailable = false;
+    setCloudStatus("offline/local", "warn");
+    if (options.notify && !options.quiet) showToast("Cloud sync is not available from this link.");
+    return false;
+  } finally {
+    cloudBusy = false;
+  }
+}
+
+async function pushToCloud(options = {}) {
+  if (location.protocol === "file:") return false;
+
+  cloudBusy = true;
+  setCloudStatus("saving");
+  try {
+    if (!options.skipMerge) {
+      const response = await fetch(API_PATH, { cache: "no-store" });
+      if (response.ok) {
+        const remote = await response.json();
+        mergeInspections(normalizeInspections(remote.inspections || {}));
+      }
+    }
+    const response = await fetch(API_PATH, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ inspections: app.inspections })
+    });
+    if (!response.ok) throw new Error(`Cloud write failed: ${response.status}`);
+    cloudAvailable = true;
+    setCloudStatus("saved", "ok");
+    if (options.notify) showToast("Saved to cloud");
+    return true;
+  } catch {
+    cloudAvailable = false;
+    setCloudStatus("offline/local", "warn");
+    if (options.notify) showToast("Could not save to cloud. Saved on this device.");
+    return false;
+  } finally {
+    cloudBusy = false;
+  }
+}
+
+function mergeInspections(incoming) {
+  for (const [id, inspection] of Object.entries(incoming)) {
+    const local = app.inspections[id];
+    if (!local || new Date(inspection.updatedAt || 0) > new Date(local.updatedAt || 0)) {
+      app.inspections[id] = inspection;
+    }
+  }
+  if (!app.inspections[app.activeId]) app.activeId = Object.keys(app.inspections)[0] || "";
+}
+
+function hasLocalNewerThan(remoteInspections) {
+  return Object.entries(app.inspections).some(([id, inspection]) => {
+    const remote = remoteInspections[id];
+    return !remote || new Date(inspection.updatedAt || 0) > new Date(remote.updatedAt || 0);
+  });
+}
+
+function isOnlyBlankLocalInspection() {
+  const inspections = Object.values(app.inspections);
+  if (inspections.length !== 1) return false;
+  const [inspection] = inspections;
+  const hasChecks = Object.values(inspection.checks || {}).some(Boolean);
+  const meta = inspection.meta || {};
+  return !hasChecks && !meta.unitAddress && !meta.moldNotes && !meta.infestationNotes && !meta.overallNotes;
 }
 
 function renderUnitList() {
@@ -329,6 +454,7 @@ function createNewInspection() {
   app.activeId = inspection.id;
   persist();
   applyInspection();
+  queueCloudSave();
   showToast("New unit started");
 }
 
@@ -351,6 +477,7 @@ function deleteCurrentInspection() {
   app.activeId = Object.keys(app.inspections)[0];
   persist();
   applyInspection();
+  queueCloudSave();
   showToast("Unit deleted");
 }
 
@@ -379,6 +506,7 @@ function importAll(file) {
       app.activeId = incoming.activeId || Object.keys(app.inspections)[0];
       persist();
       applyInspection();
+      pushToCloud({ notify: false });
       showToast("Backup imported");
     } catch {
       alert("That file was not a valid inspection backup.");
@@ -408,6 +536,7 @@ function showToast(message) {
 
 function bindEvents() {
   $("#saveBtn").addEventListener("click", () => saveCurrent({ notify: true }));
+  $("#syncBtn").addEventListener("click", () => syncFromCloud({ notify: true }));
   $("#newUnitBtn").addEventListener("click", createNewInspection);
   $("#backupBtn").addEventListener("click", exportAll);
   $("#printBtn").addEventListener("click", () => {
@@ -438,3 +567,4 @@ loadApp();
 renderSheet();
 applyInspection();
 bindEvents();
+initCloud();

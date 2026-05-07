@@ -15,4 +15,6 @@ This is a separate unit inspection app from the weekly Vale property inspection 
 
 ## Notes
 
-The saved units live in the browser storage on the device you use. For long-term records or moving to another device, use Backup All.
+When deployed to Netlify, saved units are shared through the public cloud sheet so collaborators using the same link see the same units. Because there is no login, anyone with the link can edit the shared sheet.
+
+When opened as a local file or on a static-only host, saved units fall back to browser storage on the device you use. For long-term records or moving to another device, use Backup All.

@@ -67,6 +67,31 @@ textarea {
   justify-content: flex-end;
 }
 
+.cloud-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid #c7c7c7;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.cloud-status[data-level="ok"] {
+  border-color: #78a893;
+  background: #e8f2ee;
+  color: #235f4e;
+}
+
+.cloud-status[data-level="warn"] {
+  border-color: #d5bd77;
+  background: #fbf2d9;
+  color: #75591b;
+}
+
 button {
   min-height: 38px;
   border: 1px solid #c7c7c7;
@@ -403,6 +428,10 @@ input[type="radio"] {
   .header-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cloud-status {
+    justify-content: center;
   }
 
   .top-line,
