@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f4f0">
+    <title>Pre-Show / Occupancy Inspection</title>
+    <link rel="stylesheet" href="./styles.css?v=2">
+  </head>
+  <body>
+    <header class="app-header no-print">
+      <div>
+        <p>Saved pre-show / pre-move-in sheets</p>
+        <h1>Pre-Show / Occupancy Inspection</h1>
+      </div>
+      <div class="header-actions">
+        <button id="saveBtn" type="button">Save</button>
+        <button id="newUnitBtn" type="button">New Unit</button>
+        <button id="backupBtn" type="button">Backup All</button>
+        <button id="importBtn" type="button">Import</button>
+        <button id="printBtn" type="button">Print / Save PDF</button>
+        <input id="importFile" class="visually-hidden" type="file" accept="application/json">
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="unit-panel no-print">
+        <div class="unit-panel-head">
+          <strong>Saved Units</strong>
+          <span id="unitTotal">0</span>
+        </div>
+        <input id="unitSearch" type="search" placeholder="Search unit">
+        <div id="unitList" class="unit-list"></div>
+        <button id="deleteUnitBtn" class="danger" type="button">Delete Current Unit</button>
+      </aside>
+
+      <section class="paper-sheet" aria-label="Pre-show occupancy inspection form">
+        <header class="sheet-header">
+          <div></div>
+          <div>
+            <h2>PRE-SHOW/OCCUPANCY INSPECTION</h2>
+            <p>(required in all lease files)</p>
+          </div>
+          <small>Rev-maint-20211213</small>
+        </header>
+
+        <div class="top-line">
+          <label>ADDRESS: <input id="unitAddress" data-meta="unitAddress" type="text"></label>
+          <label>DATE: <input id="inspectionDate" data-meta="inspectionDate" type="date"></label>
+        </div>
+
+        <div id="sheetBody"></div>
+
+        <section class="question-block">
+          <p>Any evidence of mold in the apartment?</p>
+          <label><input data-meta="moldEvidence" name="moldEvidence" type="radio" value="Yes"> Yes</label>
+          <label><input data-meta="moldEvidence" name="moldEvidence" type="radio" value="No"> No</label>
+          <span>If yes, please explain</span>
+          <textarea data-meta="moldNotes" rows="2"></textarea>
+        </section>
+
+        <section class="question-block">
+          <p>Any evidence of bed bugs, or other infestation?</p>
+          <label><input data-meta="infestationEvidence" name="infestationEvidence" type="radio" value="Yes"> Yes</label>
+          <label><input data-meta="infestationEvidence" name="infestationEvidence" type="radio" value="No"> No</label>
+          <span>If yes, please explain</span>
+          <textarea data-meta="infestationNotes" rows="2"></textarea>
+        </section>
+
+        <section class="washer-dryer">
+          <p>Record condition &amp; serial # of any community supplied washer/dryer.</p>
+          <div class="serial-row">
+            <label>Washer <input data-meta="washerSerial" type="text"></label>
+            <label>Dryer <input data-meta="dryerSerial" type="text"></label>
+          </div>
+          <div class="condition-row">
+            <span>Condition</span>
+            <label><input data-meta="washerCondition" name="washerCondition" type="radio" value="Good"> Good</label>
+            <label><input data-meta="washerCondition" name="washerCondition" type="radio" value="Fair"> Fair</label>
+            <label><input data-meta="washerCondition" name="washerCondition" type="radio" value="Poor"> Poor</label>
+            <span>Condition</span>
+            <label><input data-meta="dryerCondition" name="dryerCondition" type="radio" value="Good"> Good</label>
+            <label><input data-meta="dryerCondition" name="dryerCondition" type="radio" value="Fair"> Fair</label>
+            <label><input data-meta="dryerCondition" name="dryerCondition" type="radio" value="Poor"> Poor</label>
+          </div>
+        </section>
+
+        <section class="comments-block">
+          <p>Comments and Notes</p>
+          <textarea data-meta="overallNotes" rows="5"></textarea>
+        </section>
+
+        <footer class="signature-block">
+          <label><input data-meta="inspector" type="text"><span>Inspected by</span></label>
+          <label><input data-meta="inspectorDate" type="date"><span>Date</span></label>
+          <label><input data-meta="propertyManager" type="text"><span>Property Manager Signature</span></label>
+          <label><input data-meta="propertyManagerDate" type="date"><span>Date</span></label>
+        </footer>
+      </section>
+    </main>
+
+    <div id="toast" class="toast no-print" hidden></div>
+    <script src="./app.js?v=2"></script>
+  </body>
+</html>
